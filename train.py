@@ -26,7 +26,7 @@ class MGBDataset(torch.utils.data.Dataset):
         item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
         target = torch.zeros(self.length)
         source = torch.tensor(self.labels[idx])
-        target[:len(source)] = source
+        target[1:len(source)+1] = source
         item["labels"] = target.long()
         return item
 
@@ -57,11 +57,13 @@ def compute_metrics(pred):
     f1_dict["f1"] = np.mean(f1_filtered)
     return f1_dict
 
-def read_mgb(split_file, start_index=1):
+def read_mgb(split_file, start_index=1, max_lines=float('inf')):
     r_text = []
     r_labels = []
     with open(split_file, "r") as f:
-        for line in tqdm(f):
+        for i, line in tqdm(enumerate(f)):
+            if i >= max_lines:
+                break
             tokens = [t.lower() for t in line.split()[start_index:]]
             text = [t for t in tokens if "<" not in t]
             labels = ["<none>"] * len(text)
@@ -80,10 +82,13 @@ id_map, label_map = None, None
 @click.command()
 @click.option("--name", prompt="Run Name", help="The name to log to wandb")
 @click.option(
-    "--train-sets",
-    help="train sets, comma separated if more than one",
+    "--train-set",
+    help="train set",
     default="train.txt",
 )
+@click.option("--lm-set", help="the language model", default=None)
+@click.option("--lm-length", help="the language model length", default=162_260) # = length of train
+@click.option("--lm-epochs", help="epochs to train the lm for, -1 to combine with train", default=-1)
 @click.option("--test-set", help="test set", default="dev.txt")
 @click.option("--model", help="transformers model", default="distilbert-base-uncased")
 @click.option("--pad-length", help="length to pad to", type=int, default=256)
@@ -103,21 +108,12 @@ def train(**kwargs):
 
     wandb.init(project="APAuT", name=kwargs["name"])
 
-    if "," not in kwargs["train_sets"]:
-        train_sets = [kwargs["train_sets"]]
-    else:
-        train_sets = [ts for ts in kwargs["train_sets"].split(",")]
-    train_texts, train_labels = [], []
-    for ts in train_sets:
-        if "train.txt" in ts:
-            i = 1
-        elif "lm.txt" in ts:
-            i = 0
-        tt, tl = read_mgb(ts, start_index=i)
-        train_texts += tt
-        train_labels += tl
-
-    #train_texts, train_labels = read_mgb(kwargs["train_sets"])
+    if kwargs["lm_set"] is not None:
+        lm_texts, lm_labels = read_mgb(kwargs["train_set"], 0, kwargs["lm_length"])
+    train_texts, train_labels = read_mgb(kwargs["train_set"])
+    if kwargs["lm_set"] is not None and kwargs["lm_epochs"] == -1:
+        train_texts += lm_texts
+        train_labels += lm_labels
     test_texts, test_labels = read_mgb(kwargs["test_set"])
 
     label_types = np.unique(np.array(flatten(train_labels)))
@@ -130,7 +126,7 @@ def train(**kwargs):
     train_texts = join_all(train_texts)
     test_texts = join_all(test_texts)
 
-    tokenizer = AutoTokenizer.from_pretrained(kwargs["model"])
+    tokenizer = AutoTokenizer.from_pretrained(kwargs["model"], use_fast=True)                       
 
     train_encodings = tokenizer(
         train_texts, truncation=True, padding=True, pad_to_multiple_of=kwargs['pad_length']
