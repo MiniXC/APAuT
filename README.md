@@ -3,7 +3,12 @@ Usage: train.py [OPTIONS]
 
 Options:
   --name TEXT                     The name to log to wandb
-  --train-sets TEXT               train sets, comma separated if more than one
+  --train-set TEXT                train set
+  --lm-set TEXT                   the language model
+  --lm-length INTEGER             the language model length
+  --lm-epochs INTEGER             epochs to train the lm for, -1 to combine
+                                  with train
+
   --test-set TEXT                 test set
   --model TEXT                    transformers model
   --pad-length INTEGER            length to pad to
