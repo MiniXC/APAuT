@@ -26,7 +26,7 @@ class MGBDataset(torch.utils.data.Dataset):
         item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
         target = torch.zeros(self.length)
         source = torch.tensor(self.labels[idx])
-        target[1:len(source)+1] = source
+        target[:len(source)] = source
         item["labels"] = target.long()
         return item
 
@@ -57,7 +57,7 @@ def compute_metrics(pred):
     f1_dict["f1"] = np.mean(f1_filtered)
     return f1_dict
 
-def read_mgb(split_file, start_index=1, max_lines=float('inf')):
+def read_mgb(split_file, start_index=1, max_lines=float('inf'), max_words=float('inf')):
     r_text = []
     r_labels = []
     with open(split_file, "r") as f:
@@ -65,6 +65,9 @@ def read_mgb(split_file, start_index=1, max_lines=float('inf')):
             if i >= max_lines:
                 break
             tokens = [t.lower() for t in line.split()[start_index:]]
+            if len(tokens) > max_words:
+                max_lines += 1
+                continue
             text = [t for t in tokens if "<" not in t]
             labels = ["<none>"] * len(text)
             i_off = 0
@@ -86,9 +89,13 @@ id_map, label_map = None, None
     help="train set",
     default="train.txt",
 )
-@click.option("--lm-set", help="the language model", default=None)
-@click.option("--lm-length", help="the language model length", default=162_260) # = length of train
-@click.option("--lm-epochs", help="epochs to train the lm for, -1 to combine with train", default=-1)
+@click.option(
+    "--train-set-length",
+    help="number of rows to select from given train set, none for no limit",
+    default=float('inf'),
+)
+@click.option("--train-set-start-index", type=int, default=0)
+@click.option("--train-set-max-words", default=float('inf'))
 @click.option("--test-set", help="test set", default="dev.txt")
 @click.option("--model", help="transformers model", default="distilbert-base-uncased")
 @click.option("--pad-length", help="length to pad to", type=int, default=256)
@@ -103,17 +110,13 @@ id_map, label_map = None, None
 )
 @click.option("--learning-rate", type=float, default=5e-5)
 @click.option("--weight-decay", type=float, default=0.1)
+@click.option("--save", type=bool, default=True)
 def train(**kwargs):
     global id_map, label_map
 
     wandb.init(project="APAuT", name=kwargs["name"])
 
-    if kwargs["lm_set"] is not None:
-        lm_texts, lm_labels = read_mgb(kwargs["train_set"], 0, kwargs["lm_length"])
-    train_texts, train_labels = read_mgb(kwargs["train_set"])
-    if kwargs["lm_set"] is not None and kwargs["lm_epochs"] == -1:
-        train_texts += lm_texts
-        train_labels += lm_labels
+    train_texts, train_labels = read_mgb(kwargs["train_set"], kwargs["train_set_start_index"], kwargs["train_set_length"], kwargs["train_set_max_words"])
     test_texts, test_labels = read_mgb(kwargs["test_set"])
 
     label_types = np.unique(np.array(flatten(train_labels)))
@@ -204,6 +207,11 @@ def train(**kwargs):
 
     wandb.config.update(kwargs)
     trainer.train()
+
+    if kwargs["save"]:
+        model_path = f'./models/{kwargs["name"]}'
+        model.save_pretrained(model_path)
+        tokenizer.save_pretrained(model_path)
 
 if __name__ == "__main__":
     train()
