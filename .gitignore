@@ -3,3 +3,4 @@ wandb
 .ipynb_checkpoints
 *.txt
 models
+*.hdf5

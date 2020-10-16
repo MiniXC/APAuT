@@ -1,0 +1,2 @@
+python train.py --train-set os.txt --train-set-length 1000000 --train-set-start-index 0 --train-set-max-words 255 --model distilroberta-base --epochs 1 --learning-rate 0.0001 --batch-size 75 --fp16=True --name distilroberta-os-1M
+python train.py --train-set lm.txt --train-set-length 1000000 --train-set-start-index 0 --train-set-max-words 255 --model distilroberta-base --epochs 1 --learning-rate 0.0001 --batch-size 75 --fp16=True --name distilroberta-lm-1M
